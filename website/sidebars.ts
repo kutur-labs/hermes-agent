@@ -741,6 +741,7 @@ const sidebars: SidebarsConfig = {
             'developer-guide/tools-runtime',
             'developer-guide/acp-internals',
             'developer-guide/cron-internals',
+            'developer-guide/egress-internals',
             'developer-guide/trajectory-format',
           ],
         },
