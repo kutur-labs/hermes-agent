@@ -36,9 +36,21 @@ export function MessageLine(props: { message: Message }) {
         <Show
           when={m().role === 'assistant' && hasParts()}
           fallback={
-            <text>
-              <span style={{ fg: theme().color.text }}>{m().text}</span>
-            </text>
+            // No parts yet: the just-started streaming turn shows ONLY the caret,
+            // inline with the glyph (not an empty line + a dangling caret below —
+            // item 10 cursor misalignment); a settled row shows its flat text.
+            <Show
+              when={m().streaming && !hasParts()}
+              fallback={
+                <text>
+                  <span style={{ fg: theme().color.text }}>{m().text}</span>
+                </text>
+              }
+            >
+              <text>
+                <span style={{ fg: theme().color.muted }}>▍</span>
+              </text>
+            </Show>
           }
         >
           <For each={m().parts ?? []}>
@@ -58,11 +70,6 @@ export function MessageLine(props: { message: Message }) {
               </Switch>
             )}
           </For>
-        </Show>
-        <Show when={m().streaming && !hasParts()}>
-          <text>
-            <span style={{ fg: theme().color.muted }}>▍</span>
-          </text>
         </Show>
       </box>
     </box>
