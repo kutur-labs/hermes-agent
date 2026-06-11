@@ -234,6 +234,9 @@ function composeEnv({ ui, opentuiCap, heapMb, fakeEnv, activeSessionFile }) {
   if (ui === 'opentui') {
     env.HERMES_TUI_MOUSE = '1'
     if (opentuiCap != null) env.HERMES_TUI_MAX_MESSAGES = String(opentuiCap)
+    // Windowing A/B (feat/opentui-memory-window): pass the flag through —
+    // composeEnv is otherwise a clean env and would silently strip it.
+    if (process.env.HERMES_TUI_WINDOWING != null) env.HERMES_TUI_WINDOWING = process.env.HERMES_TUI_WINDOWING
   }
   Object.assign(env, fakeEnv)
   return env

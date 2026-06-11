@@ -149,7 +149,7 @@ async function cellMem(opts) {
         fixtureMsgs: fx.msgs,
         fixtureSha: fx.sha256,
         memoryMax: opts.cap === 'none' ? null : '2G',
-        heapMb: 8192,
+        heapMb: opts.heap ?? 8192,
         runTimeoutMs: 45 * 60 * 1000
       })
     }
@@ -416,7 +416,8 @@ const opts = {
   cap: opt('cap'),
   seed: opt('seed') ? Number(opt('seed')) : undefined,
   configs: opt('configs') ? opt('configs').split(',').filter(c => CONFIGS[c]) : undefined,
-  scenarios: opt('scenarios') ? opt('scenarios').split(',').filter(s => CHAOS_SCENARIOS.includes(s)) : undefined
+  scenarios: opt('scenarios') ? opt('scenarios').split(',').filter(s => CHAOS_SCENARIOS.includes(s)) : undefined,
+  heap: opt('heap') ? Number(opt('heap')) : undefined
 }
 const cell = opt('cell')
 mkdirSync(RESULTS_DIR, { recursive: true })
