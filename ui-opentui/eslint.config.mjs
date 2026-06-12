@@ -4,9 +4,9 @@ import unusedImports from "eslint-plugin-unused-imports"
 
 export default tseslint.config(
   {
-    // .bench/ is a build artifact of the bench suite's `nodes` cell
-    // (bench/run.mjs builds scripts/mem-bench.tsx into it) — never lint it.
-    ignores: ["node_modules/**", "dist/**", ".bench/**", ".repos/**", "*.frame.txt", "*.ansi"],
+    // .bench/ and .demo/ are build artifacts (bench `nodes` cell and the
+    // smoke demo: `node scripts/build.mjs scripts/demo.tsx .demo`) — never lint.
+    ignores: ["node_modules/**", "dist/**", ".bench/**", ".demo/**", ".repos/**", "*.frame.txt", "*.ansi"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

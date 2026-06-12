@@ -506,10 +506,14 @@ describe('session store — resume hydrate (Phase 4b)', () => {
 
 describe('session store — rolling message cap (bounds the Yoga node high-water mark)', () => {
   const ENV_KEY = 'HERMES_TUI_MAX_MESSAGES'
+  const WINDOWING_KEY = 'HERMES_TUI_WINDOWING'
   const prev = process.env[ENV_KEY]
+  const prevWindowing = process.env[WINDOWING_KEY]
   afterEach(() => {
     if (prev === undefined) delete process.env[ENV_KEY]
     else process.env[ENV_KEY] = prev
+    if (prevWindowing === undefined) delete process.env[WINDOWING_KEY]
+    else process.env[WINDOWING_KEY] = prevWindowing
   })
 
   test('caps the message array at the env-tuned MESSAGE_CAP, dropping the oldest (head)', () => {
@@ -578,23 +582,37 @@ describe('session store — rolling message cap (bounds the Yoga node high-water
     expect(store.state.messages.at(-1)!.text).toBe('h7')
   })
 
-  test('defaults to 1000 (the handle-safe ceiling) when the env var is unset/invalid', () => {
+  test('defaults to 3000 (windowed ceiling) when the env var is unset/invalid and windowing is on', () => {
+    // With transcript windowing (the default) the mounted set is ~3 viewports
+    // regardless of store size, so the scrollback ceiling is 3000 (#27 payoff).
     delete process.env[ENV_KEY]
+    delete process.env[WINDOWING_KEY]
     const store = createSessionStore()
-    for (let i = 0; i < 1050; i++) store.pushUser(`m${i}`)
-    expect(store.state.messages).toHaveLength(1000)
+    for (let i = 0; i < 3050; i++) store.pushUser(`m${i}`)
+    expect(store.state.messages).toHaveLength(3000)
     expect(store.state.messages[0]!.text).toBe('m50') // oldest 50 dropped
   })
 
-  test('env values ABOVE the handle-safe ceiling are clamped to it (the native handle table binds, not memory)', () => {
+  test('HERMES_TUI_WINDOWING=0 keeps the handle-safe 1000 ceiling (every row mounts again)', () => {
+    delete process.env[ENV_KEY]
+    process.env[WINDOWING_KEY] = '0'
+    const store = createSessionStore()
+    for (let i = 0; i < 1050; i++) store.pushUser(`m${i}`)
+    expect(store.state.messages).toHaveLength(1000)
+    expect(store.state.messages[0]!.text).toBe('m50')
+  })
+
+  test('env values ABOVE the ceiling are clamped to it (the native handle table binds, not memory)', () => {
     // @opentui/core's global handle registry holds 65,534 live objects and a
     // text renderable costs 3; ~47 handles/row on the realistic fixture means
-    // ≳1,400 live rows crashes mid-mount ("Failed to create SyntaxStyle").
-    // A 100000 "cap" is therefore a crash sentence, not a cap — clamp it.
+    // ≳1,400 live MOUNTED rows crashes mid-mount ("Failed to create
+    // SyntaxStyle"). Windowing bounds the mounted set (peak 31 measured), so
+    // the windowed ceiling is 3000 stored rows; a 100000 "cap" still clamps.
     process.env[ENV_KEY] = '100000'
+    delete process.env[WINDOWING_KEY]
     const store = createSessionStore()
-    for (let i = 0; i < 1100; i++) store.pushUser(`m${i}`)
-    expect(store.state.messages).toHaveLength(1000)
+    for (let i = 0; i < 3100; i++) store.pushUser(`m${i}`)
+    expect(store.state.messages).toHaveLength(3000)
     expect(store.state.dropped).toBe(100)
     expect(store.state.messages[0]!.text).toBe('m100')
   })

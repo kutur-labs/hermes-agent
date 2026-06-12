@@ -153,7 +153,18 @@ function clipScrollbar(frame: string): string {
 
 describe('transcript windowing — S2 append-time adjudication', () => {
   test('bursting 1500 appends keeps the peak mounted-row count bounded (< 120)', async () => {
-    const onStore = createSessionStore()
+    // Pin the cap below the burst size: this test ALSO exercises the
+    // cap-trim × windowing interplay (trimmed rows' spacers must be pruned,
+    // scroll-to-top must land on the oldest SURVIVOR, row-500). The default
+    // ceiling is 3000 under windowing (#27) — a 1500-row burst never trims it.
+    process.env.HERMES_TUI_MAX_MESSAGES = '1000'
+    const onStore = (() => {
+      try {
+        return createSessionStore()
+      } finally {
+        delete process.env.HERMES_TUI_MAX_MESSAGES
+      }
+    })()
     onStore.apply({ type: 'gateway.ready' })
     const on = await mountTranscript(onStore, '1')
     try {
@@ -172,7 +183,14 @@ describe('transcript windowing — S2 append-time adjudication', () => {
       // ZERO-JANK INVARIANT survives the burst: spacers (measured or
       // estimated — these rows never soft-wrap) occupy EXACTLY the height the
       // full tree would. (The store cap trims both to the same 1000 rows.)
-      const offStore = createSessionStore()
+      process.env.HERMES_TUI_MAX_MESSAGES = '1000'
+      const offStore = (() => {
+        try {
+          return createSessionStore()
+        } finally {
+          delete process.env.HERMES_TUI_MAX_MESSAGES
+        }
+      })()
       offStore.apply({ type: 'gateway.ready' })
       for (let i = 0; i < 1500; i++) {
         offStore.pushSystem(i % 5 === 4 ? `row-${i} marker\nsecond line\nthird line` : `row-${i} marker`)
