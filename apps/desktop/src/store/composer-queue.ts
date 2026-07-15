@@ -36,10 +36,6 @@ export interface PendingSteerEntry {
 type QueueState = Record<string, QueuedPromptEntry[]>
 type SteerState = Record<string, PendingSteerEntry[]>
 
-// Legacy localStorage key from the client-owned queue era. Read once by
-// migrateLegacyQueue() to push stranded entries to the gateway, then cleared.
-const LEGACY_STORAGE_KEY = 'hermes.desktop.composerQueue.v1'
-
 export const $queuedPromptsBySession = atom<QueueState>({})
 export const $pendingSteersBySession = atom<SteerState>({})
 
@@ -293,53 +289,6 @@ export const migrateQueuedPrompts = (fromKey: string | null | undefined, toKey: 
   $queuedPromptsBySession.set(next)
 
   return true
-}
-
-/** One-time migration: push any entries stranded in the legacy localStorage
- *  queue (client-owned era) to the gateway, then clear the storage key. */
-export const migrateLegacyQueue = (key: string | null | undefined) => {
-  const sid = sidOf(key)
-
-  if (!sid || typeof window === 'undefined') {
-    return
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY)
-
-    if (!raw) {
-      return
-    }
-
-    const parsed: unknown = JSON.parse(raw)
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
-
-      return
-    }
-
-    const state = parsed as Record<string, { text?: string }[]>
-    const entries = state[sid]
-
-    if (entries?.length) {
-      for (const entry of entries) {
-        if (entry?.text?.trim()) {
-          void enqueueQueuedPrompt(sid, { text: entry.text })
-        }
-      }
-    }
-
-    delete state[sid]
-
-    if (Object.keys(state).length === 0) {
-      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
-    } else {
-      window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(state))
-    }
-  } catch {
-    // Best-effort — a broken legacy blob shouldn't take down the composer.
-  }
 }
 
 // ── Pending steers ───────────────────────────────────────────────────

@@ -6,7 +6,6 @@ import { type ComposerAttachment } from '@/store/composer'
 import {
   $pendingSteersBySession,
   $queuedPromptsBySession,
-  migrateLegacyQueue,
   migrateQueuedPrompts,
   promoteQueuedPrompt,
   type QueuedPromptEntry,
@@ -220,13 +219,6 @@ export function useComposerQueue({
 
     migrateQueuedPrompts(prev, activeQueueSessionKey)
   }, [activeQueueSessionKey, queueSessionKey])
-
-  // One-time legacy migration: entries stranded in the localStorage queue
-  // (from before the queue moved to the gateway) are pushed to
-  // session.queue.add and the storage key is cleared.
-  useEffect(() => {
-    migrateLegacyQueue(activeQueueSessionKey)
-  }, [activeQueueSessionKey])
 
   // Queue-edit cleanup: on session swap the scope effect already stashed the
   // edit snapshot; only restore into the composer when still on the same scope.
