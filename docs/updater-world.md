@@ -771,6 +771,24 @@ This kills the duplicated version floors (`node_satisfies_build` in bash ≡
 download URL construction, and gives `hermes doctor` a single table to
 validate an ejected environment against.
 
+Native deps split into two explicit tiers, and the manifest is where a
+dep declares which one it's in:
+
+- **`"bundled": true`** (ripgrep): small, static-friendly, version-
+  sensitive CLIs ship inside the bundle at `runtime/tools/`, which the
+  launcher prepends to PATH — existing `shutil.which("rg")` call sites
+  (dep_ensure, /files completion) resolve the pinned copy with no code
+  changes, and a slot flip updates them atomically like everything else.
+- **`"on_demand": true`** (ffmpeg, Playwright Chromium): system-level
+  deps that are too big or too OS-entangled to bundle stay installed
+  where they live today — system package manager or vendor caches
+  *outside* the install tree — so slot flips and fresh worktrees never
+  lose them. The `features.json` ledger (§2.10) carries the *intent* to
+  have them; `dep_ensure.py` remains the lazy install path. Its
+  installation backend is today install.sh's package-manager machinery —
+  which is exactly why the phase-5 install.sh shrink has a dedicated
+  extract-first precondition in the sunset checklist.
+
 ## 2.7 Migration path (incremental, not big-bang)
 
 1. **Phase 0 — CI bundles exist.** Add the release pipeline; publish bundles

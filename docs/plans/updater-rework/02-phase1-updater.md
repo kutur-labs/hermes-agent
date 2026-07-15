@@ -55,8 +55,11 @@ containing `gitdir:` — not a dir!), and neither (error).
 
 **Step 5:** `build_child_env(tree) -> Vec<(String,String)>` — TDD the exact
 contract from §2.5.1:
-- PATH: prepend `<tree>/runtime/node/bin` + `<tree>/runtime/python/bin`
-  (slot) or `$HERMES_HOME/node/bin` + `$HERMES_HOME/bin` (checkout);
+- PATH: prepend `<tree>/runtime/tools` + `<tree>/runtime/node/bin` +
+  `<tree>/runtime/python/bin` (slot — `runtime/tools` carries bundled
+  native CLIs like `rg` so existing `shutil.which` call sites resolve
+  the pinned copies, task 0.3) or `$HERMES_HOME/node/bin` +
+  `$HERMES_HOME/bin` (checkout);
 - set `VIRTUAL_ENV=<tree venv>`, `UV_PYTHON=<tree venv python>`,
   `UV_NO_CONFIG=1`;
 - REMOVE `PYTHONPATH`, `PYTHONHOME`.

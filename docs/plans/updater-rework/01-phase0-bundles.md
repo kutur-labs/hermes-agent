@@ -199,6 +199,15 @@ dist/bundle/
 ├── runtime/python/      # uv-managed CPython (uv python install --install-dir)
 ├── runtime/venv/        # uv sync --locked, NON-editable install of the repo
 ├── runtime/node/        # node LTS tarball extract (reuse install.sh's URL logic)
+├── runtime/tools/       # bundled native CLIs from runtime-deps.json entries
+│                        #   marked "bundled": ripgrep's `rg` (static musl build
+│                        #   on linux, official archives elsewhere). The launcher
+│                        #   prepends this dir to PATH before exec so existing
+│                        #   shutil.which("rg") call sites resolve it with zero
+│                        #   code changes; a system rg earlier on PATH still
+│                        #   wins nothing — slot dir is prepended, giving the
+│                        #   pinned version priority. ffmpeg/chromium are NOT
+│                        #   here (on_demand system-level deps, §2.6).
 ├── app/                 # git archive of the source tree (no .git), precompiled .pyc
 ├── ui/tui/dist/         # npm run build in ui-tui
 ├── ui/web/dist/         # web build (_build_web_ui equivalent: npm run build in web/)

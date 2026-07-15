@@ -127,6 +127,15 @@ diagnostics).
     gateway/code_skew.py, retry-once in any remaining Tauri path,
     sourceDeclaresServe + dashboardFallbackArgs (desktop)
 [ ] Shrink install.sh/install.ps1 to: fetch updater + PATH setup + --source
+    ⚠ PRECONDITION beyond the global one: hermes_cli/dep_ensure.py uses
+    install.sh AS ITS RUNTIME BACKEND for lazy native-dep installs
+    (ffmpeg, chromium/agent-browser, system packages — see its module
+    docstring: "1900 lines of battle-tested OS detection"). Before
+    shrinking, extract the OS-detection + package-manager logic into a
+    standalone script the bundle carries (e.g. scripts/install-native-dep.sh,
+    shipped in app/scripts/ of every bundle) and re-point dep_ensure.py
+    at it. Verify: `hermes doctor` on a slot install with no system
+    ffmpeg can still prompt-install it.
 [ ] Remove run_tests.sh third venv probe (deprecated in phase 3)
 [ ] Each deletion lands as its own PR with the E2E gates green
 ```
