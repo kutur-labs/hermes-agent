@@ -26,6 +26,13 @@ param(
     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
     [string]$InstallDir = $(if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$env:LOCALAPPDATA\hermes\hermes-agent" }),
 
+    # --- Install mode ---
+    # -Bundle (default): download hermes-updater + managed bundle (no clone/venv/deps).
+    # -Source: git clone + venv + deps (developer path).
+    [switch]$Bundle,
+    [switch]$Source,
+    [string]$BundleSource = "",
+
     # --- Stage protocol (additive; default invocation behaves as before) ----
     # See the "Stage protocol" section near the bottom of the file for the
     # full contract.  Intended for programmatic drivers (the desktop GUI's
@@ -3529,8 +3536,39 @@ try {
         exit 0
     }
 
-    # Default: full install (today's behavior, plus optional -NonInteractive
-    # and -Json layered on by the params above).
+    # Default: bundle install (new default) or source install (--Source)
+    # -Bundle is the default; -Source forces the old git-clone + venv path.
+    if (-not $Source) {
+        # Bundle mode: download hermes-updater + managed bundle
+        $updaterUrl = if ($BundleSource) {
+            "$BundleSource/hermes-updater-win-x64.exe"
+        } else {
+            "https://github.com/NousResearch/hermes-agent/releases/latest/download/hermes-updater-win-x64.exe"
+        }
+
+        Write-Banner
+        Write-Info "Bundle install: downloading hermes-updater..."
+        $updaterPath = Join-Path $HermesHome "bin\hermes-updater.exe"
+        $binDir = Split-Path $updaterPath -Parent
+        if (-not (Test-Path $binDir)) {
+            New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+        }
+
+        try {
+            Invoke-WebRequest -Uri $updaterUrl -OutFile $updaterPath -UseBasicParsing
+        } catch {
+            Write-Err "Failed to download hermes-updater: $_"
+            Write-Info "Try a source install instead: .\install.ps1 -Source"
+            exit 1
+        }
+
+        Write-Info "Running hermes-updater install..."
+        $sourceFlag = if ($BundleSource) { "--source `"$BundleSource`"" } else { "" }
+        & $updaterPath install --channel stable $sourceFlag
+        exit $LASTEXITCODE
+    }
+
+    # Source mode: full git-clone + venv + deps (developer path)
     Main
 } catch {
     if ($Json -or $Stage) {
