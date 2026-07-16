@@ -10,7 +10,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LAUNCHER_DIR="$REPO_ROOT/apps/hermes-launcher"
-UV="${UV:-$HOME/.hermes/bin/uv}"
+if [ -n "${UV:-}" ]; then
+    UV="$UV"
+elif command -v uv >/dev/null 2>&1; then
+    UV="$(command -v uv)"
+else
+    UV="$HOME/.hermes/bin/uv"
+fi
 
 WORK=$(mktemp -d)
 export HERMES_HOME="$WORK/home"

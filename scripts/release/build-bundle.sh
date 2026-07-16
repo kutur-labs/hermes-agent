@@ -372,7 +372,7 @@ echo ""
 
 # Verify the bundle boots
 echo "==> Verifying bundle..."
-"$BUNDLE_LAUNCHER" --version
+(cd "$OUT_DIR" && "$(pwd)/bin/$(basename "$BUNDLE_LAUNCHER")" --version)
 echo "    PASS: native launcher --version"
 
 "$VENV_PYTHON" -c "import hermes_cli, run_agent, model_tools; print('    PASS: core imports')"
