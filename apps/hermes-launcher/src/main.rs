@@ -1,5 +1,6 @@
 mod adopt;
 mod cli;
+mod cwd_guard;
 mod launch;
 mod release;
 mod selfupdate;
