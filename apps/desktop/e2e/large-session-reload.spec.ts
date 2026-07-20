@@ -209,7 +209,13 @@ test.describe('loading a large previous session', () => {
         for (const record of records) {
           if (record.type === 'childList') {
             state.mutations += 1
-            batchAdded += 1
+            // Only count bursts that ADD nodes — the initial
+            // setMessages([]) clear removes nodes (expected behavior),
+            // but content-building re-renders add nodes. Each additive
+            // burst is a separate paint of the transcript.
+            if (record.addedNodes.length > 0) {
+              batchAdded += 1
+            }
           }
         }
 
