@@ -27,6 +27,7 @@ import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChat
 import { sessionMessagesSignature } from '@/lib/session-signatures'
 import { isMessagingSource } from '@/lib/session-source'
 import { latestSessionTodos } from '@/lib/todos'
+import { requestVoiceConversationStart } from '@/store/composer'
 import { setCronFocusJobId } from '@/store/cron'
 import { $pinnedSessionIds, pinSession, restoreWorktree, unpinSession } from '@/store/layout'
 import { $filePreviewTarget, $previewTarget } from '@/store/preview'
@@ -629,9 +630,22 @@ export function ContribWiring({ children }: { children: ReactNode }) {
   const handleGatewayEventWithPlugins = useCallback(
     (event: Parameters<typeof handleDesktopGatewayEvent>[0]) => {
       emitGatewayEvent(event)
+
+      // "Hey Hermes": handle the wake event on the canonical onEvent pipeline —
+      // open a fresh session (unless the config keeps the current one) and begin
+      // back-and-forth voice via the composer's latched start request.
+      if (event.type === 'wake.detected') {
+        const payload = event.payload as { start_new_session?: boolean } | undefined
+        if (payload?.start_new_session !== false) {
+          startFreshSessionDraft()
+        }
+        requestVoiceConversationStart()
+        return
+      }
+
       handleDesktopGatewayEvent(event)
     },
-    [handleDesktopGatewayEvent]
+    [handleDesktopGatewayEvent, startFreshSessionDraft]
   )
 
   useGatewayBoot({
@@ -651,6 +665,16 @@ export function ContribWiring({ children }: { children: ReactNode }) {
     refreshHermesConfig,
     refreshSessions
   })
+
+  // "Hey Hermes" wake word: arm the server-side detector for this surface
+  // (gated on config server-side). Detection arrives as a wake.detected event
+  // handled in handleGatewayEventWithPlugins. Idempotent, so reconnects are safe.
+  useEffect(() => {
+    if (gatewayState !== 'open') {
+      return
+    }
+    void requestGateway('wake.start', { surface: 'gui' }).catch(() => undefined)
+  }, [gatewayState, requestGateway])
 
   // Only the open messaging transcript needs its own poll — local chats are
   // live over the websocket already.

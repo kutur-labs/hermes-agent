@@ -93,6 +93,27 @@ export function createComposerAttachmentScope($attachments = atom<ComposerAttach
  *  `$composerAttachments` reader/writer IS this scope. */
 export const mainComposerScope = createComposerAttachmentScope($composerAttachments)
 
+// Latched "start a voice conversation" request (the "Hey Hermes" wake word).
+// A nanostore, not a fire-once window event, because the wake handler opens a
+// fresh session first — the composer may remount before it can observe the
+// intent. The composer reads the current value on (re)mount and consumes it
+// once it's ready (gateway open). Module-level _voiceStartHandled tracks the
+// last consumed id so a remount doesn't re-trigger or miss a just-set request.
+export const $voiceConversationStartRequest = atom(0)
+let _voiceStartHandled = 0
+
+export const requestVoiceConversationStart = (): void =>
+  $voiceConversationStartRequest.set(Date.now())
+
+/** Returns true exactly once per new request id (claims it). */
+export const takeVoiceConversationStart = (current: number): boolean => {
+  if (current > _voiceStartHandled) {
+    _voiceStartHandled = current
+    return true
+  }
+  return false
+}
+
 // Per-thread draft stash for the decoupled composer. Session lifecycle never
 // touches this — only ChatBar's scope swap reads/writes it. Text mirrors to
 // localStorage; attachments are memory-only (blobs, upload state).

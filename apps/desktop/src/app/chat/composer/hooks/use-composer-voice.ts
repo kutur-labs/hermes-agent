@@ -1,9 +1,12 @@
+import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { chatMessageText } from '@/lib/chat-messages'
 import { triggerHaptic } from '@/lib/haptics'
+import { $voiceConversationStartRequest, takeVoiceConversationStart } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
+import { $gateway } from '@/store/gateway'
 import { notifyError } from '@/store/notifications'
 import { $messages } from '@/store/session'
 import { $autoSpeakReplies, setAutoSpeakReplies } from '@/store/voice-prefs'
@@ -131,6 +134,54 @@ export function useComposerVoice({
     () => onComposerVoiceToggleRequest(toggled => toggled === target && toggleVoiceConversation()),
     [target, toggleVoiceConversation]
   )
+
+  // "Hey Hermes" wake word: a latched start request (nanostore) the composer
+  // claims once it's mounted and the gateway is ready. Survives the fresh-session
+  // remount the wake handler triggers, and waits out a transient `disabled`.
+  const voiceStartReq = useStore($voiceConversationStartRequest)
+  useEffect(() => {
+    if (disabled) {
+      return // not ready — re-runs when `disabled` flips false
+    }
+    if (!takeVoiceConversationStart(voiceStartReq)) {
+      return
+    }
+    if (!voiceConversationActive) {
+      setVoiceConversationActive(true)
+    }
+  }, [voiceStartReq, disabled, voiceConversationActive])
+
+  // Hand the mic between the server-side wake detector and the browser's voice
+  // loop: pause the detector while a conversation is live, resume it after
+  // (no-ops server-side when the wake word isn't armed). wakePausedRef tracks
+  // whether WE paused, so resume always runs once — including on unmount, where
+  // ending voice can tear the composer down before the `false` render lands and
+  // would otherwise leave the detector paused forever.
+  const wakePausedRef = useRef(false)
+  const resumeWakeIfPaused = useCallback(() => {
+    if (!wakePausedRef.current) {
+      return
+    }
+    wakePausedRef.current = false
+    void $gateway
+      .get()
+      ?.request('wake.resume', {})
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    if (voiceConversationActive) {
+      wakePausedRef.current = true
+      void $gateway
+        .get()
+        ?.request('wake.pause', {})
+        .catch(() => undefined)
+    } else {
+      resumeWakeIfPaused()
+    }
+  }, [voiceConversationActive, resumeWakeIfPaused])
+
+  useEffect(() => resumeWakeIfPaused, [resumeWakeIfPaused])
 
   // Explicit start/end for the on-screen conversation controls (the hotkey uses
   // the gated toggle above).
