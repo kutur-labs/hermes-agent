@@ -21,8 +21,10 @@ import { atom, computed } from 'nanostores'
 import type { ClientSessionState } from '@/app/types'
 import { findGroup, findGroupOfPane, type LayoutNode } from '@/components/pane-shell/tree/model'
 import {
+  $focusedRuntimeId as $focusedPaneRuntimeId,
   $focusedStoredSessionId as $focusedPaneStoredSessionId,
   $visibleSessionIds,
+  bindPaneRuntime,
   setPaneContent
 } from '@/store/pane-content'
 import {
@@ -381,12 +383,18 @@ $selectedStoredSessionId.listen(storedSessionId => {
   setPaneContent('workspace', { kind: 'chat', storedSessionId })
 })
 
+$activeSessionId.listen(runtimeId => {
+  bindPaneRuntime('workspace', runtimeId)
+})
+
 $sessionTiles.listen(tiles => {
   for (const tile of tiles) {
-    setPaneContent(`session-tile:${tile.storedSessionId}`, {
+    const paneId = `session-tile:${tile.storedSessionId}`
+    setPaneContent(paneId, {
       kind: 'chat',
       storedSessionId: tile.storedSessionId
     })
+    bindPaneRuntime(paneId, tile.runtimeId ?? null)
   }
 })
 
@@ -651,18 +659,9 @@ export function reopenLastClosedTile(): void {
 
 export const $focusedStoredSessionId = $focusedPaneStoredSessionId
 
-/** Live runtime id of the focused session (a tile's bound runtime, else the
- * primary's active session). */
-export const $focusedRuntimeId = computed(
-  [$focusedStoredSessionId, $selectedStoredSessionId, $activeSessionId, $sessionTiles],
-  (focused, selected, primaryRuntime, tiles) => {
-    if (focused && focused !== selected) {
-      return tiles.find(t => t.storedSessionId === focused)?.runtimeId ?? null
-    }
-
-    return primaryRuntime
-  }
-)
+/** Live runtime id of the focused pane. Pane content owns the binding; session
+ * state resolves its cached state slice. */
+export const $focusedRuntimeId = $focusedPaneRuntimeId
 
 /** The focused session's state slice (undefined while unresolved/unbound). */
 export const $focusedSessionState = computed([$focusedRuntimeId, $sessionStates], (runtimeId, states) =>

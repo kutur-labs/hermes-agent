@@ -6,8 +6,11 @@ import { $activeTreeGroup, $dismissedPanes, $hiddenTreePanes, $layoutTree } from
 import {
   $focusedPaneContent,
   $focusedPaneId,
+  $focusedRuntimeId,
   $focusedStoredSessionId,
+  $paneRuntimeById,
   $visibleSessionIds,
+  bindPaneRuntime,
   clearPaneContent,
   setPaneContent,
 } from './pane-content'
@@ -16,6 +19,7 @@ afterEach(() => {
   clearPaneContent()
   $layoutTree.set(null)
   $activeTreeGroup.set(null)
+  $paneRuntimeById.set({})
   $hiddenTreePanes.set(new Set())
   $dismissedPanes.set(new Set())
 })
@@ -66,5 +70,19 @@ describe('$visibleSessionIds', () => {
     expect($focusedPaneId.get()).toBe('session-tile:b')
     expect($focusedPaneContent.get()).toEqual({ kind: 'chat', storedSessionId: 'session-b' })
     expect($focusedStoredSessionId.get()).toBe('session-b')
+  })
+
+  it('binds the focused pane to its own live runtime', () => {
+    setPaneContent('main', { kind: 'chat', storedSessionId: 'session-a' })
+    setPaneContent('session-tile:b', { kind: 'chat', storedSessionId: 'session-b' })
+    $layoutTree.set(split('row', [
+      group(['main'], { id: 'main-group' }),
+      group(['session-tile:b'], { id: 'tile-group' }),
+    ]))
+    $activeTreeGroup.set('tile-group')
+    bindPaneRuntime('main', 'runtime-a')
+    bindPaneRuntime('session-tile:b', 'runtime-b')
+
+    expect($focusedRuntimeId.get()).toBe('runtime-b')
   })
 })

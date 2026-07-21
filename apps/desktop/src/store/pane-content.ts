@@ -9,6 +9,20 @@ export type PaneContent =
 
 export const $paneContentById = atom<Record<string, PaneContent>>({})
 
+/** Ephemeral runtime bindings. Durable pane content stores a session id; the
+ * backend re-mints runtime ids after reconnect, so they are never persisted. */
+export const $paneRuntimeById = atom<Record<string, string | null>>({})
+
+export function bindPaneRuntime(paneId: string, runtimeId: string | null) {
+  const current = $paneRuntimeById.get()
+
+  if ((current[paneId] ?? null) === runtimeId) {
+    return
+  }
+
+  $paneRuntimeById.set({ ...current, [paneId]: runtimeId })
+}
+
 export function setPaneContent(paneId: string, content: PaneContent) {
   const current = $paneContentById.get()
 
@@ -58,6 +72,11 @@ export const $focusedPaneContent = computed(
 export const $focusedStoredSessionId = computed(
   $focusedPaneContent,
   content => (content?.kind === 'chat' ? content.storedSessionId : null)
+)
+
+export const $focusedRuntimeId = computed(
+  [$focusedPaneId, $paneRuntimeById],
+  (paneId, runtimeById) => (paneId ? runtimeById[paneId] ?? null : null)
 )
 
 /** Stored session ids in panes actually visible on screen. Hidden tabs,
