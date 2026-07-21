@@ -185,12 +185,12 @@ const DESKTOP_COMMAND_SPECS: readonly DesktopCommandSpec[] = [
   // route to it directly via `rpc(...)` — bypassing slash.exec avoids the
   // slash-worker pipe timeout and the "not a quick/plugin/skill command"
   // fallback noise for commands the dispatcher doesn't handle inline.
-  {
-    name: '/agents',
-    description: 'Show active desktop sessions and running tasks',
-    aliases: ['/tasks'],
-    surface: rpc('agents.list', ctx => ({ session_id: ctx.sessionId }))
-  },
+  // These commands have gateway RPCs, but their established desktop behavior
+  // carries richer CLI semantics: /agents includes delegations, /stop cancels
+  // them, /steer falls back to a next-turn prompt, and /usage is a formatted
+  // live report. Keep them on slash.exec until their RPC contracts are fully
+  // equivalent.
+  { name: '/agents', description: 'Show active desktop sessions and running tasks', aliases: ['/tasks'], surface: exec() },
   { name: '/background', description: 'Run a prompt in the background', aliases: ['/bg', '/btw'], surface: exec() },
   // /compress must be an action (session.compress RPC), not exec: the slash
   // worker route times out on large sessions (30s WS / 45s pipe) before the
@@ -231,19 +231,11 @@ const DESKTOP_COMMAND_SPECS: readonly DesktopCommandSpec[] = [
     description: 'Show current session status',
     surface: rpc('session.status', ctx => ({ session_id: ctx.sessionId }))
   },
-  {
-    name: '/steer',
-    description: 'Steer the current run after the next tool call',
-    surface: rpc('session.steer', ctx => ({ session_id: ctx.sessionId, text: ctx.arg.trim() }))
-  },
-  { name: '/stop', description: 'Stop running background processes', surface: rpc('process.stop', () => ({})) },
+  { name: '/steer', description: 'Steer the current run after the next tool call', surface: exec(), args: true },
+  { name: '/stop', description: 'Stop running background processes', surface: exec() },
   { name: '/tools', description: 'List or toggle tools available to the agent', surface: exec(), args: true },
   { name: '/undo', description: 'Remove the last user/assistant exchange', surface: exec() },
-  {
-    name: '/usage',
-    description: 'Show token usage for this session',
-    surface: rpc('session.usage', ctx => ({ session_id: ctx.sessionId }))
-  },
+  { name: '/usage', description: 'Show token usage for this session', surface: exec() },
   { name: '/version', description: 'Show Hermes Agent version', surface: exec() },
 
   // No desktop surface, but carry an alias (underscore spelling variants).

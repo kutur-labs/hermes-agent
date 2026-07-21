@@ -87,19 +87,13 @@ describe('desktop slash command curation', () => {
     expect(isDesktopSlashSuggestion('/compact')).toBe(false)
   })
 
-  it('routes commands with dedicated gateway RPCs to the rpc surface', () => {
-    const rpcNames = ['/agents', '/save', '/status', '/steer', '/stop', '/usage'] as const
-
+  it('routes only stateless session commands through dedicated gateway RPCs', () => {
     const expected = {
-      '/agents': 'agents.list',
       '/save': 'session.save',
-      '/status': 'session.status',
-      '/steer': 'session.steer',
-      '/stop': 'process.stop',
-      '/usage': 'session.usage'
+      '/status': 'session.status'
     } as const
 
-    for (const name of rpcNames) {
+    for (const [name, rpcName] of Object.entries(expected)) {
       const surface = resolveDesktopCommand(name)?.surface
       expect(surface?.kind).toBe('rpc')
 
@@ -107,22 +101,16 @@ describe('desktop slash command curation', () => {
         continue
       }
 
-      expect(surface.rpc).toBe(expected[name])
+      expect(surface.rpc).toBe(rpcName)
+      expect(surface.buildParams({ arg: 'topic A', command: name, name: name.slice(1), sessionId: 's-1' })).toEqual({
+        session_id: 's-1'
+      })
+    }
+  })
 
-      const params = surface.buildParams({ arg: 'topic A', command: name, name: name.slice(1), sessionId: 's-1' })
-
-      // process.stop doesn't take a session_id — kills ALL background
-      // processes. Other commands must echo the active session id.
-      if (name === '/stop') {
-        expect(params).not.toHaveProperty('session_id')
-      } else {
-        expect(params.session_id).toBe('s-1')
-      }
-
-      // steer threads the typed arg through as `text`; others ignore it.
-      if (name === '/steer') {
-        expect(params.text).toBe('topic A')
-      }
+  it('keeps commands with richer CLI semantics on the slash worker', () => {
+    for (const name of ['/agents', '/steer', '/stop', '/usage']) {
+      expect(resolveDesktopCommand(name)?.surface).toEqual({ kind: 'exec' })
     }
   })
 
@@ -277,7 +265,7 @@ describe('desktop slash command curation', () => {
     expect(resolveDesktopCommand('/new')?.surface).toEqual({ kind: 'action', action: 'new' })
     expect(resolveDesktopCommand('/reset')?.surface).toEqual({ kind: 'action', action: 'new' })
     expect(resolveDesktopCommand('/resume')?.surface).toEqual({ kind: 'picker', picker: 'session' })
-    expect(resolveDesktopCommand('/usage')?.surface.kind).toBe('rpc')
+    expect(resolveDesktopCommand('/usage')?.surface).toEqual({ kind: 'exec' })
     expect(resolveDesktopCommand('/clear')?.surface).toEqual({ kind: 'unavailable', reason: 'terminal' })
     // Skill / quick commands aren't in the registry.
     expect(resolveDesktopCommand('/gif-search')).toBeNull()

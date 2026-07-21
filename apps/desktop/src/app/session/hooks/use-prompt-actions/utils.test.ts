@@ -176,12 +176,12 @@ describe('renderRpcResult', () => {
   })
 
   describe('process.stop', () => {
-    it('reports killed processes positively', () => {
-      expect(renderRpcResult({ killed: true }, 'stop')).toBe('Stopped all background processes.')
+    it('reports the numeric number of stopped processes', () => {
+      expect(renderRpcResult({ killed: 2 }, 'stop')).toBe('Stopped 2 background processes.')
     })
 
-    it('reports nothing-to-stop when killed is false', () => {
-      expect(renderRpcResult({ killed: false }, 'stop')).toBe('No background processes to stop.')
+    it('reports nothing-to-stop when the numeric count is zero', () => {
+      expect(renderRpcResult({ killed: 0 }, 'stop')).toBe('No background processes to stop.')
     })
   })
 

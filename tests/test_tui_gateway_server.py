@@ -2223,7 +2223,7 @@ def test_make_agent_passes_configured_fallback_chain(monkeypatch):
 
     assert agent.model == "gpt-5.5"
     assert captured["fallback_model"] == fallback_chain
-    assert captured["platform"] == "tui"
+    assert captured["platform"] == "desktop"
 
 
 def test_background_agent_kwargs_preserves_full_fallback_chain(monkeypatch):
@@ -3507,7 +3507,7 @@ def test_ensure_session_db_row_persists_explicit_cwd(monkeypatch, tmp_path):
     server._ensure_session_db_row({"session_key": "k1", "cwd": str(tmp_path), "explicit_cwd": True})
 
     assert created == [
-        {"key": "k1", "source": "tui", "model": "test-model", "model_config": None, "cwd": str(tmp_path)}
+        {"key": "k1", "source": "desktop", "model": "test-model", "model_config": None, "cwd": str(tmp_path)}
     ]
 
 
@@ -3547,7 +3547,7 @@ def test_ensure_session_db_row_defaults_to_no_workspace(monkeypatch, tmp_path):
     server._ensure_session_db_row({"session_key": "k1", "cwd": str(tmp_path)})
 
     assert created == [
-        {"key": "k1", "source": "tui", "model": "test-model", "model_config": None, "cwd": None}
+        {"key": "k1", "source": "desktop", "model": "test-model", "model_config": None, "cwd": None}
     ]
 
 
@@ -5602,6 +5602,88 @@ def test_session_compress_returns_compute_host_history(monkeypatch):
         "messages": [{"role": "user", "content": "compressed context"}],
         "usage": {"total": 42},
     }
+
+
+def test_session_compress_forwards_120_second_budget_to_compute_host(monkeypatch):
+    session = _session(agent=None, _compute_host_active=True)
+    server._sessions["sid"] = session
+    calls = []
+
+    def send_control(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {
+            "type": "control.ack",
+            "result": {
+                "status": "compressed",
+                "messages": [],
+                "removed": 0,
+                "summary": {"headline": "Already compressed", "noop": True},
+            },
+        }
+
+    monkeypatch.setattr(server, "_session_uses_compute_host", lambda _session: True)
+    monkeypatch.setattr(server, "_send_compute_host_control", send_control)
+
+    try:
+        resp = server.handle_request(
+            {"id": "1", "method": "session.compress", "params": {"session_id": "sid"}}
+        )
+    finally:
+        server._sessions.pop("sid", None)
+
+    assert resp["result"]["status"] == "compressed"
+    assert calls == [
+        (
+            ("sid",),
+            {
+                "route_name": "session.compress",
+                "command": "/compress",
+                "wait": True,
+                "timeout": 120.0,
+            },
+        )
+    ]
+
+
+def test_session_compress_preserves_compute_host_aborted_summary(monkeypatch):
+    session = _session(agent=None, _compute_host_active=True)
+    server._sessions["sid"] = session
+    result = {
+        "status": "aborted",
+        "messages": [{"role": "user", "content": "preserved context"}],
+        "removed": 0,
+        "summary": {
+            "aborted": True,
+            "headline": "Compression aborted: 6 messages preserved",
+            "note": "No compression provider is configured.",
+        },
+    }
+    monkeypatch.setattr(server, "_session_uses_compute_host", lambda _session: True)
+    monkeypatch.setattr(
+        server,
+        "_send_compute_host_control",
+        lambda *args, **kwargs: {
+            "type": "control.ack",
+            "result": result,
+            "session_key": "rotated-host-key",
+            "history_version": 7,
+            "message_count": 1,
+            "session_info": {"model": "host-model"},
+        },
+    )
+
+    try:
+        resp = server.handle_request(
+            {"id": "1", "method": "session.compress", "params": {"session_id": "sid"}}
+        )
+    finally:
+        server._sessions.pop("sid", None)
+
+    assert resp["result"] == {**result, "turn_isolation": True}
+    assert session["session_key"] == "rotated-host-key"
+    assert session["history_version"] == 7
+    assert session["_metadata_message_count"] == 1
+    assert session["_metadata_mirror"]["model"] == "host-model"
 
 
 def test_session_compress_reports_aborted_summary_without_success(monkeypatch):

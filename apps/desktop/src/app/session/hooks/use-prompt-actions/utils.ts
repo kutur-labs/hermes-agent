@@ -246,9 +246,9 @@ export function renderRpcResult(response: unknown, name: string): string {
     return 'Steer rejected — agent declined input'
   }
 
-  // process.stop — { killed: boolean }
-  if ('killed' in r && typeof r.killed === 'boolean') {
-    return r.killed ? 'Stopped all background processes.' : 'No background processes to stop.'
+  // process.stop — { killed: number }
+  if ('killed' in r && typeof r.killed === 'number') {
+    return r.killed > 0 ? `Stopped ${r.killed} background process${r.killed === 1 ? '' : 'es'}.` : 'No background processes to stop.'
   }
 
   // session.save — { file }

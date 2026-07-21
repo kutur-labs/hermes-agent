@@ -570,6 +570,44 @@ class ComputeHost:
                     }
                 )
                 return
+            if route_name == "session.compress":
+                command = str(frame.get("command") or "")
+                focus_topic = command.removeprefix("/compress").strip()
+                response = server._methods["session.compress"](
+                    request_id,
+                    {
+                        "session_id": sid,
+                        **({"focus_topic": focus_topic} if focus_topic else {}),
+                    },
+                )
+                if "error" in response:
+                    self.emit(
+                        {
+                            "type": "control.error",
+                            "sid": sid,
+                            "request_id": request_id,
+                            "message": str(response["error"].get("message") or "session compression failed"),
+                        }
+                    )
+                    return
+                with session["history_lock"]:
+                    session_key = str(session.get("session_key") or "")
+                    history_version = int(session.get("history_version", 0))
+                    message_count = len(session.get("history") or [])
+                self.emit(
+                    {
+                        "type": "control.ack",
+                        "sid": sid,
+                        "request_id": request_id,
+                        "route_name": route_name,
+                        "result": response.get("result") or {},
+                        "session_key": session_key,
+                        "history_version": history_version,
+                        "message_count": message_count,
+                        "session_info": server._session_info(session.get("agent"), session),
+                    }
+                )
+                return
             command = str(frame.get("command") or "")
             output = ""
             if command:

@@ -427,7 +427,9 @@ describe('usePromptActions /compress', () => {
 
     await handle!.submitText('/compress')
 
-    expect(renderedSeedTexts(seeds)).toEqual(expect.arrayContaining(['compute-host summary', 'compute-host answer']))
+    const computeHostTexts = renderedSeedTexts(seeds)
+    expect(computeHostTexts).toEqual(expect.arrayContaining(['compute-host summary', 'compute-host answer']))
+    expect(computeHostTexts.some(text => text.includes('Compressed 4 → 2 messages'))).toBe(true)
     expect($notifications.get()).toEqual(
       expect.arrayContaining([expect.objectContaining({ message: 'Compressed 4 → 2 messages' })])
     )

@@ -420,6 +420,14 @@ export function useSlashCommand(deps: SlashCommandDeps) {
               )
 
               const aborted = result.status === 'aborted' || result.summary.aborted === true
+
+              if (!aborted) {
+                // Keep a durable record of a successful manual compression in
+                // the chat after replacing it with the authoritative backend
+                // transcript. Errors remain transient: appending an error as a
+                // system message would look like a successful state change.
+                renderSlashOutput(lines.join('\n'))
+              }
               notify({ durationMs: 5_000, id: noticeId, kind: aborted ? 'error' : 'success', message: lines.join('\n') })
 
               return
@@ -428,17 +436,20 @@ export function useSlashCommand(deps: SlashCommandDeps) {
             const hostOutput = result?.host_ack?.output?.trim()
 
             if (hostOutput) {
+              renderSlashOutput(hostOutput)
               notify({ durationMs: 5_000, id: noticeId, kind: 'success', message: hostOutput })
 
               return
             }
 
             const removed = result?.removed ?? 0
+            const message = removed > 0 ? `compressed ${removed} messages` : 'nothing to compress'
+            renderSlashOutput(message)
             notify({
               durationMs: 5_000,
               id: noticeId,
               kind: 'success',
-              message: removed > 0 ? `compressed ${removed} messages` : 'nothing to compress'
+              message
             })
           } catch (err) {
             dismissNotification(noticeId)
