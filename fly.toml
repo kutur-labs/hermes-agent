@@ -1,0 +1,24 @@
+app = "marcel"
+primary_region = "waw"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HERMES_UID = "10000"
+  HERMES_GID = "10000"
+  TS_HOSTNAME = "marcel"
+
+[processes]
+  app = "gateway run"
+
+[[mounts]]
+  source = "hermes_data"
+  destination = "/opt/data"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "2048mb"

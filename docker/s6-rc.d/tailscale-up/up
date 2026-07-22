@@ -1,0 +1,34 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+set -eu
+
+socket=/run/tailscale/tailscaled.sock
+attempt=0
+while ! tailscale --socket="$socket" status --json >/tmp/tailscale-status.json 2>/dev/null; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+        echo "tailscaled did not become ready" >&2
+        exit 1
+    fi
+    sleep 1
+done
+
+backend_state="$(
+    python3 -c 'import json; print(json.load(open("/tmp/tailscale-status.json"))["BackendState"])'
+)"
+rm -f /tmp/tailscale-status.json
+
+if [ "$backend_state" != "Running" ]; then
+    if [ -z "${TS_AUTHKEY:-}" ]; then
+        echo "TS_AUTHKEY is required for first-time Tailscale enrollment" >&2
+        exit 1
+    fi
+
+    tailscale --socket="$socket" up \
+        --auth-key="$TS_AUTHKEY" \
+        --hostname="${TS_HOSTNAME:-${FLY_APP_NAME:-hermes-agent}}" \
+        --ssh \
+        --accept-dns=false
+else
+    tailscale --socket="$socket" set --ssh=true
+fi

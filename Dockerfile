@@ -1,4 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.11.6-python3.13-trixie@sha256:b3c543b6c4f23a5f2df22866bd7857e5d304b67a564f4feab6ac22044dde719b AS uv_source
+FROM tailscale/tailscale:v1.98.9@sha256:f15d5d3f4a68773a853180b72496f70ba614b64de0878c43fe3da39fe0afba47 AS tailscale_source
 # Node 22 LTS source stage. Debian trixie's bundled nodejs is pinned to 20.x
 # which reached EOL in April 2026 — we copy node + npm + corepack from the
 # upstream node:22 image instead so we can stay on a supported LTS without
@@ -91,6 +92,7 @@ COPY --chmod=0755 docker/tini-shim.sh /usr/bin/tini
 RUN useradd -u 10000 -m -d /opt/data hermes
 
 COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
+COPY --chmod=0755 --from=tailscale_source /usr/local/bin/tailscale /usr/local/bin/tailscaled /usr/local/bin/
 
 # Node 22 LTS: copy the node binary plus the bundled npm + corepack JS
 # installs from the upstream image.  npm and npx are recreated as symlinks

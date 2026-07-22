@@ -1,0 +1,10 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+set -eu
+
+mkdir -p /run/tailscale /opt/data/tailscale
+
+exec tailscaled \
+    --tun=userspace-networking \
+    --state=/opt/data/tailscale/tailscaled.state \
+    --socket=/run/tailscale/tailscaled.sock
