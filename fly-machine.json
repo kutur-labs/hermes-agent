@@ -3,7 +3,12 @@
     {
       "name": "marcel",
       "image": "debian:13.4",
-      "cmd": ["sleep", "infinity"]
+      "cmd": ["sleep", "infinity"],
+      "secrets": [
+        {
+          "env_var": "TS_AUTHKEY"
+        }
+      ]
     }
   ]
 }
