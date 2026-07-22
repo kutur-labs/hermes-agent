@@ -79,6 +79,21 @@ def _init_code_repo(path):
     (path / "main.py").write_text("print('hi')\n")
 
 
+def test_communication_guidance_is_global_even_with_custom_soul():
+    agent = _make_agent(load_soul_identity=True)
+    with (
+        patch("run_agent.load_soul_md", return_value="You are Marcel."),
+        patch("run_agent.build_nous_subscription_prompt", return_value=""),
+        patch("run_agent.build_environment_hints", return_value=""),
+        patch("run_agent.build_context_files_prompt", return_value=""),
+    ):
+        stable = build_system_prompt_parts(agent)["stable"]
+
+    assert "You are Marcel." in stable
+    assert "Be concise, direct, and factual." in stable
+    assert "Do not pad answers, bluff" in stable
+
+
 class TestCodingContextBlock:
     def test_injected_when_active(self, monkeypatch, tmp_path):
         _init_code_repo(tmp_path)

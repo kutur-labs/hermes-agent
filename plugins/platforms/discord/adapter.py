@@ -67,6 +67,27 @@ _DISCORD_NONCONVERSATIONAL_METADATA_KEYS = frozenset({
     "non_conversational",
     "non_conversational_history",
 })
+_DISCORD_REACTION_FEEDBACK = {
+    "❤": (
+        "The user liked your previous response. Respond naturally with a brief, "
+        "warm acknowledgment appropriate to the conversation. Do not explain or "
+        "label the reaction, feedback, approval, workflow, or pending actions."
+    ),
+    "👍": (
+        "The user liked your previous response. Respond naturally with a brief, "
+        "warm acknowledgment appropriate to the conversation. Do not explain or "
+        "label the reaction, feedback, approval, workflow, or pending actions."
+    ),
+    "👎": (
+        "The user reacted with 👎 to request a revision of your previous response. "
+        "Reconsider it and provide a corrected, improved answer."
+    ),
+    "🔄": (
+        "The user reacted with 🔄 to request a retry of your previous response. "
+        "Try the request again and provide a fresh answer."
+    ),
+}
+_DISCORD_REACTION_CANCEL = "🛑"
 # Upgrade-bridge fallback only. The primary mechanism is the persisted
 # non-conversational message-ID set populated from explicitly marked sends
 # (metadata["non_conversational"]). These regexes exist solely to recognize
@@ -1107,6 +1128,8 @@ class DiscordAdapter(BasePlatformAdapter):
             intents.message_content = True
             intents.dm_messages = True
             intents.guild_messages = True
+            intents.dm_reactions = True
+            intents.guild_reactions = True
             intents.members = (
                 # ``"*"`` is the open-mode wildcard (honored in _is_allowed_user),
                 # not a username to resolve, so it must not pull in the privileged
@@ -1172,6 +1195,10 @@ class DiscordAdapter(BasePlatformAdapter):
             @self._client.event
             async def on_message(message: DiscordMessage):
                 await adapter_self._dispatch_discord_message(message)
+
+            @self._client.event
+            async def on_raw_reaction_add(payload):
+                await adapter_self._handle_raw_reaction_add(payload)
 
             @self._client.event
             async def on_voice_state_update(member, before, after):
@@ -1296,20 +1323,20 @@ class DiscordAdapter(BasePlatformAdapter):
                 return False, False
             role_authorized = bool(getattr(self, "_allowed_role_ids", set()))
 
-        raw_self_mention = self._self_is_explicitly_mentioned(message)
+        self_invoked = self._message_invokes_self(message)
         if not isinstance(message.channel, discord.DMChannel) and (
-            message.mentions or raw_self_mention
+            message.mentions or self_invoked
         ):
             other_bots_mentioned = any(
                 mentioned.bot and mentioned != self._client.user
                 for mentioned in message.mentions
             )
-            if other_bots_mentioned and not raw_self_mention:
+            if other_bots_mentioned and not self_invoked:
                 return False, False
             ignore_no_mention = os.getenv(
                 "DISCORD_IGNORE_NO_MENTION", "true"
             ).lower() in {"true", "1", "yes"}
-            if ignore_no_mention and not raw_self_mention and not other_bots_mentioned:
+            if ignore_no_mention and not self_invoked and not other_bots_mentioned:
                 parent_id = None
                 if hasattr(message.channel, "parent_id") and message.channel.parent_id:
                     parent_id = str(message.channel.parent_id)
@@ -2130,7 +2157,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 and "*" not in free_channels
                 and not (channel_keys & free_channels)
                 and not in_bot_thread
-                and not self._self_is_explicitly_mentioned(message)
+                and not self._message_invokes_self(message)
             ):
                 return False
         admitted, role_authorized = self._discord_message_admission(
@@ -2783,6 +2810,113 @@ class DiscordAdapter(BasePlatformAdapter):
     def _reactions_enabled(self) -> bool:
         """Check if message reactions are enabled via config/env."""
         return os.getenv("DISCORD_REACTIONS", "true").lower() not in {"false", "0", "no"}
+
+    async def _handle_raw_reaction_add(self, payload: Any) -> bool:
+        """Route authorized reactions on Hermes messages into their session."""
+        if (
+            not self._reactions_enabled()
+            or not self.config.extra.get("reaction_feedback", True)
+            or not self._client
+        ):
+            return False
+
+        bot_user = getattr(self._client, "user", None)
+        bot_id = getattr(bot_user, "id", None)
+        user_id = str(getattr(payload, "user_id", "") or "")
+        if not user_id or bot_id is None or user_id == str(bot_id):
+            return False
+
+        emoji = str(getattr(getattr(payload, "emoji", None), "name", "") or "").replace("\ufe0f", "")
+        feedback_text = _DISCORD_REACTION_FEEDBACK.get(emoji)
+        is_cancel = emoji == _DISCORD_REACTION_CANCEL
+        if feedback_text is None and not is_cancel:
+            return False
+
+        channel_id = getattr(payload, "channel_id", None)
+        message_id = getattr(payload, "message_id", None)
+        if channel_id is None or message_id is None:
+            return False
+
+        try:
+            channel = self._client.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self._client.fetch_channel(int(channel_id))
+            if channel is None or not hasattr(channel, "fetch_message"):
+                return False
+            target_message = await channel.fetch_message(int(message_id))
+        except Exception as exc:
+            logger.debug("[%s] Could not resolve reaction target: %s", self.name, exc)
+            return False
+
+        target_author_id = getattr(getattr(target_message, "author", None), "id", None)
+        if target_author_id is None or str(target_author_id) != str(bot_id):
+            return False
+
+        guild = getattr(target_message, "guild", None) or getattr(channel, "guild", None)
+        member = getattr(payload, "member", None)
+        is_dm = guild is None
+        parent_id = str(getattr(channel, "parent_id", "") or "")
+        channel_ids = None if is_dm else {str(channel_id), *({parent_id} if parent_id else set())}
+        if not self._is_allowed_user(
+            user_id,
+            member,
+            guild=guild,
+            is_dm=is_dm,
+            channel_ids=channel_ids,
+        ):
+            return False
+
+        is_thread = bool(parent_id)
+        if is_dm:
+            chat_type = "dm"
+            chat_name = getattr(member, "display_name", None) or getattr(member, "name", None) or user_id
+        elif is_thread:
+            chat_type = "thread"
+            chat_name = self._format_thread_chat_name(channel)
+        else:
+            chat_type = "group"
+            channel_name = getattr(channel, "name", str(channel_id))
+            guild_name = getattr(guild, "name", "")
+            chat_name = f"{guild_name} / #{channel_name}" if guild_name else channel_name
+
+        display_name = (
+            getattr(member, "display_name", None)
+            or getattr(member, "name", None)
+            or user_id
+        )
+        source = self.build_source(
+            chat_id=str(channel_id),
+            chat_name=chat_name,
+            chat_type=chat_type,
+            user_id=user_id,
+            user_name=display_name,
+            thread_id=str(channel_id) if is_thread else None,
+            chat_topic=self._get_effective_topic(channel, is_thread=is_thread),
+            guild_id=str(getattr(guild, "id", "")) or None,
+            parent_chat_id=parent_id or None,
+            message_id=str(message_id),
+            role_authorized=bool(getattr(self, "_allowed_role_ids", set())),
+        )
+        event = MessageEvent(
+            text="/stop" if is_cancel else feedback_text,
+            message_type=MessageType.COMMAND if is_cancel else MessageType.TEXT,
+            source=source,
+            raw_message=payload,
+            message_id=str(message_id),
+            reply_to_message_id=str(message_id),
+            reply_to_text=getattr(target_message, "content", None) or None,
+            reply_to_is_own_message=True,
+            auto_skill=self._resolve_channel_skills(str(channel_id), parent_id or None),
+            channel_prompt=self._resolve_channel_prompt(str(channel_id), parent_id or None),
+        )
+
+        # A stop reaction is control flow, not a new conversational turn. Ignore
+        # it unless this exact session currently has work to cancel.
+        if is_cancel and self._text_batch_key(event) not in self._active_sessions:
+            return False
+
+        await self.handle_message(event)
+        return True
 
     async def on_processing_start(self, event: MessageEvent) -> None:
         """Add an in-progress reaction and record durable handling state."""
@@ -5642,6 +5776,46 @@ class DiscordAdapter(BasePlatformAdapter):
             return bool(configured)
         return os.getenv("DISCORD_REQUIRE_MENTION", "true").lower() not in {"false", "0", "no", "off"}
 
+    def _discord_name_triggers(self) -> tuple[str, ...]:
+        """Return configured plain-text names that can invoke the bot."""
+        configured = self.config.extra.get("name_triggers")
+        if configured is None:
+            configured = os.getenv("DISCORD_NAME_TRIGGERS", "")
+        if isinstance(configured, (list, tuple, set)):
+            values = configured
+        else:
+            values = str(configured).split(",") if configured is not None else ()
+        return tuple(
+            trigger.strip()
+            for value in values
+            if (trigger := str(value).strip())
+        )
+
+    def _discord_content_has_name_trigger(self, content: str) -> bool:
+        """Return whether content contains a configured standalone wake name."""
+        return any(
+            re.search(
+                rf"(?<!\w){re.escape(trigger)}(?!\w)",
+                content,
+                flags=re.IGNORECASE,
+            )
+            is not None
+            for trigger in self._discord_name_triggers()
+        )
+
+    def _message_invokes_self(self, message: Any) -> bool:
+        """Return whether a message explicitly invokes this bot.
+
+        Human authors may use a configured plain-text name. Bot authors must
+        continue to use a Discord mention so wake names cannot create loops.
+        """
+        if self._self_is_explicitly_mentioned(message):
+            return True
+        if getattr(getattr(message, "author", None), "bot", False):
+            return False
+        content = getattr(message, "content", "") or ""
+        return self._discord_content_has_name_trigger(content)
+
     def _discord_allow_any_attachment(self) -> bool:
         """Return whether Discord attachments bypass the SUPPORTED_DOCUMENT_TYPES allowlist.
 
@@ -7064,12 +7238,13 @@ class DiscordAdapter(BasePlatformAdapter):
         recovered: bool = False,
     ) -> bool:
         """Handle one Discord message and report whether it reached dispatch."""
-        # In server channels (not DMs), require the bot to be @mentioned
+        # In server channels (not DMs), require the bot to be invoked
         # UNLESS the channel is in the free-response list or the message is
         # in a thread where the bot has already participated.
         #
         # Config (all settable via discord.* in config.yaml or DISCORD_* env vars):
-        #   discord.require_mention: Require @mention in server channels (default: true)
+        #   discord.require_mention: Require @mention or name trigger in server channels (default: true)
+        #   discord.name_triggers: Plain-text names that invoke the bot (for example, ["marcel"])
         #   discord.free_response_channels: Channel IDs where bot responds without mention
         #   discord.ignored_channels: Channel IDs where bot NEVER responds (even when mentioned)
         #   discord.allowed_channels: If set, bot ONLY responds in these channels (whitelist)
@@ -7101,7 +7276,12 @@ class DiscordAdapter(BasePlatformAdapter):
             if snapshot_text_parts and not raw_content:
                 raw_content = "\n".join(snapshot_text_parts)
                 normalized_content = raw_content
-        if self._self_is_explicitly_mentioned(message):
+        explicitly_mentioned = self._self_is_explicitly_mentioned(message)
+        name_triggered = (
+            not getattr(getattr(message, "author", None), "bot", False)
+            and self._discord_content_has_name_trigger(normalized_content)
+        )
+        if explicitly_mentioned:
             mention_prefix = True
             if self._client.user:
                 normalized_content = normalized_content.replace(f"<@{self._client.user.id}>", "").strip()
@@ -7154,10 +7334,10 @@ class DiscordAdapter(BasePlatformAdapter):
             )
 
             if require_mention and not is_free_channel and not in_bot_thread:
-                if not self._self_is_explicitly_mentioned(message) and not mention_prefix:
+                if not explicitly_mentioned and not name_triggered and not mention_prefix:
                     return False
         # Auto-thread: when enabled, automatically create a thread for every
-        # @mention in a text channel so each conversation is isolated (like Slack).
+        # invocation in a text channel so each conversation is isolated (like Slack).
         # Messages already inside threads or DMs are unaffected.
         # no_thread_channels: channels where bot responds directly without thread.
         auto_threaded_channel = None
@@ -7412,7 +7592,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
         # ── History backfill ─────────────────────────────────────────
         # When require_mention is active, the bot only processes messages
-        # that @mention it.  Messages in the channel between bot turns are
+        # that invoke it. Messages in the channel between bot turns are
         # invisible to the session transcript.  To recover that context,
         # fetch recent channel history and prepend it to the user message.
         #
@@ -9301,7 +9481,7 @@ def _apply_yaml_config(yaml_cfg: dict, discord_cfg: dict) -> dict | None:
     The DiscordAdapter reads its runtime configuration via ``os.getenv()``
     throughout the connect / handle code paths (``DISCORD_ALLOWED_USERS``,
     ``DISCORD_REQUIRE_MENTION``, ``DISCORD_FREE_RESPONSE_CHANNELS``,
-    ``DISCORD_AUTO_THREAD``, ``DISCORD_REACTIONS``,
+    ``DISCORD_NAME_TRIGGERS``, ``DISCORD_AUTO_THREAD``, ``DISCORD_REACTIONS``,
     ``DISCORD_IGNORED_CHANNELS``, ``DISCORD_ALLOWED_CHANNELS``,
     ``DISCORD_NO_THREAD_CHANNELS``, ``DISCORD_HISTORY_BACKFILL``,
     ``DISCORD_HISTORY_BACKFILL_LIMIT``, ``DISCORD_ALLOW_MENTION_*``,
@@ -9319,6 +9499,11 @@ def _apply_yaml_config(yaml_cfg: dict, discord_cfg: dict) -> dict | None:
     """
     if "require_mention" in discord_cfg and not os.getenv("DISCORD_REQUIRE_MENTION"):
         os.environ["DISCORD_REQUIRE_MENTION"] = str(discord_cfg["require_mention"]).lower()
+    name_triggers = discord_cfg.get("name_triggers")
+    if name_triggers is not None and not os.getenv("DISCORD_NAME_TRIGGERS"):
+        if isinstance(name_triggers, list):
+            name_triggers = ",".join(str(value) for value in name_triggers)
+        os.environ["DISCORD_NAME_TRIGGERS"] = str(name_triggers)
     if "thread_require_mention" in discord_cfg and not os.getenv("DISCORD_THREAD_REQUIRE_MENTION"):
         os.environ["DISCORD_THREAD_REQUIRE_MENTION"] = str(discord_cfg["thread_require_mention"]).lower()
     if "bots_require_inline_mention" in discord_cfg and not os.getenv("DISCORD_BOTS_REQUIRE_INLINE_MENTION"):

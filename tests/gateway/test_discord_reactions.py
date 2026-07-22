@@ -246,3 +246,141 @@ async def test_on_processing_complete_cancelled_removes_eyes_without_terminal_re
 
     raw_message.remove_reaction.assert_awaited_once_with("👀", adapter._client.user)
     raw_message.add_reaction.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("emoji", "expected_text"),
+    [
+        ("❤️", "brief, warm acknowledgment"),
+        ("👍", "brief, warm acknowledgment"),
+        ("👎", "request a revision"),
+        ("🔄", "request a retry"),
+    ],
+)
+async def test_authorized_reactions_on_bot_messages_route_to_session(
+    adapter, emoji, expected_text
+):
+    adapter._allowed_user_ids = {"42"}
+    adapter.handle_message = AsyncMock()
+    target = SimpleNamespace(
+        id=777,
+        author=adapter._client.user,
+        content="Previous answer",
+        guild=None,
+    )
+    channel = SimpleNamespace(
+        id=123,
+        parent_id=None,
+        name="dm",
+        guild=None,
+        fetch_message=AsyncMock(return_value=target),
+    )
+    adapter._client.get_channel = lambda _id: channel
+    member = SimpleNamespace(id=42, display_name="Jezza", name="Jezza")
+    payload = SimpleNamespace(
+        user_id=42,
+        channel_id=123,
+        message_id=777,
+        guild_id=None,
+        member=member,
+        emoji=SimpleNamespace(name=emoji),
+    )
+
+    handled = await adapter._handle_raw_reaction_add(payload)
+
+    assert handled is True
+    event = adapter.handle_message.await_args.args[0]
+    assert expected_text in event.text
+    assert event.source.chat_id == "123"
+    assert event.source.user_id == "42"
+    assert event.reply_to_message_id == "777"
+    assert event.reply_to_text == "Previous answer"
+
+
+@pytest.mark.asyncio
+async def test_reactions_ignore_non_bot_target_messages(adapter):
+    adapter._allowed_user_ids = {"42"}
+    adapter.handle_message = AsyncMock()
+    target = SimpleNamespace(
+        id=777,
+        author=SimpleNamespace(id=12345),
+        content="Not from Hermes",
+    )
+    channel = SimpleNamespace(fetch_message=AsyncMock(return_value=target))
+    adapter._client.get_channel = lambda _id: channel
+    payload = SimpleNamespace(
+        user_id=42,
+        channel_id=123,
+        message_id=777,
+        emoji=SimpleNamespace(name="👍"),
+    )
+
+    handled = await adapter._handle_raw_reaction_add(payload)
+
+    assert handled is False
+    adapter.handle_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reactions_ignore_unauthorized_users(adapter):
+    adapter._allowed_user_ids = {"42"}
+    adapter.handle_message = AsyncMock()
+    target = SimpleNamespace(
+        id=777,
+        author=adapter._client.user,
+        content="Previous answer",
+        guild=None,
+    )
+    channel = SimpleNamespace(
+        id=123,
+        parent_id=None,
+        guild=None,
+        fetch_message=AsyncMock(return_value=target),
+    )
+    adapter._client.get_channel = lambda _id: channel
+    payload = SimpleNamespace(
+        user_id=13,
+        channel_id=123,
+        message_id=777,
+        member=SimpleNamespace(id=13, display_name="Intruder"),
+        emoji=SimpleNamespace(name="👎"),
+    )
+
+    handled = await adapter._handle_raw_reaction_add(payload)
+
+    assert handled is False
+    adapter.handle_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stop_reaction_requires_active_session(adapter):
+    adapter._allowed_user_ids = {"42"}
+    adapter.handle_message = AsyncMock()
+    target = SimpleNamespace(
+        id=777,
+        author=adapter._client.user,
+        content="Working",
+        guild=None,
+    )
+    channel = SimpleNamespace(
+        id=123,
+        parent_id=None,
+        name="dm",
+        guild=None,
+        fetch_message=AsyncMock(return_value=target),
+    )
+    adapter._client.get_channel = lambda _id: channel
+    payload = SimpleNamespace(
+        user_id=42,
+        channel_id=123,
+        message_id=777,
+        guild_id=None,
+        member=SimpleNamespace(id=42, display_name="Jezza", name="Jezza"),
+        emoji=SimpleNamespace(name="🛑"),
+    )
+
+    handled = await adapter._handle_raw_reaction_add(payload)
+
+    assert handled is False
+    adapter.handle_message.assert_not_awaited()
