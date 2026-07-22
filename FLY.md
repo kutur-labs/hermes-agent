@@ -26,6 +26,10 @@ hermes setup
 exit
 ```
 
+The container's `hermes` shim restores `HERMES_HOME=/opt/data` for
+environment-sanitized Tailscale SSH sessions, so setup and status commands use
+the same persistent configuration as the supervised gateway.
+
 Then restart the Machine so the gateway reloads its configuration:
 
 ```sh

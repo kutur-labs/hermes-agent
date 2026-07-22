@@ -179,6 +179,70 @@ def test_shim_short_circuits_for_non_root_exec(sleep_container: str) -> None:
     assert r.stdout.strip() == "hermes:hermes"
 
 
+def test_shim_restores_home_after_environment_sanitization(
+    sleep_container: str,
+) -> None:
+    """SSH-like sanitized environments must still use the persistent home.
+
+    Tailscale SSH drops the image's HERMES_HOME and presents HOME=/root.
+    Without the shim restoring the container defaults, setup writes to
+    /opt/data/.hermes while the supervised gateway reads /opt/data.
+    """
+    subprocess.run(
+        [
+            "docker", "exec", "--user", "root", sleep_container,
+            "rm", "-f",
+            "/opt/data/config.yaml",
+            "/opt/data/.hermes/config.yaml",
+        ],
+        capture_output=True,
+        check=False,
+    )
+
+    r = subprocess.run(
+        [
+            "docker", "exec",
+            "-e", "HERMES_HOME=",
+            "-e", "HOME=/root",
+            sleep_container,
+            "hermes", "config", "set", "_test.sanitized_env", "1",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert r.returncode == 0, (
+        f"sanitized-env invocation failed: stdout={r.stdout!r} stderr={r.stderr!r}"
+    )
+
+    r = subprocess.run(
+        [
+            "docker", "exec", sleep_container,
+            "test", "-f", "/opt/data/config.yaml",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert r.returncode == 0, (
+        "The shim did not restore HERMES_HOME=/opt/data after environment "
+        f"sanitization: {r.stderr!r}"
+    )
+
+    r = subprocess.run(
+        [
+            "docker", "exec", sleep_container,
+            "test", "!", "-e", "/opt/data/.hermes/config.yaml",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert r.returncode == 0, (
+        "Hermes wrote configuration to the nested /opt/data/.hermes home"
+    )
+
+
 def test_shim_opt_out_keeps_root(sleep_container: str) -> None:
     """HERMES_DOCKER_EXEC_AS_ROOT=1 should suppress the privilege drop.
 

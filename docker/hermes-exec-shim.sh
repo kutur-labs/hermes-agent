@@ -49,6 +49,15 @@ if [ ! -x "$REAL" ]; then
     exit 127
 fi
 
+# Tailscale SSH and some container exec implementations intentionally start
+# sessions with a sanitized environment, dropping the image's HERMES_HOME and
+# resetting HOME to /root. This shim is specific to the Docker image, whose
+# persistent runtime home is always /opt/data, so restore those defaults before
+# either the root or non-root execution path. Explicit HERMES_HOME overrides
+# remain supported for profiles and diagnostics.
+export HERMES_HOME="${HERMES_HOME:-/opt/data}"
+export HOME=/opt/data
+
 # Already non-root? Just exec the real binary. This is the hot path for
 # supervised processes (uid 10000) and for `docker exec --user hermes`.
 if [ "$(id -u)" != "0" ]; then
@@ -77,11 +86,5 @@ if [ ! -x "$S6_SUID" ]; then
     echo "hermes-shim: re-run with --user hermes or set HERMES_DOCKER_EXEC_AS_ROOT=1." >&2
     exit 126
 fi
-
-# Reset HOME to the hermes user's home before dropping privileges. Without
-# this, $HOME stays /root and any library that resolves paths off $HOME
-# (XDG caches, lockfiles, .config writes) will try to write to /root and
-# fail with EACCES. Mirrors main-wrapper.sh.
-export HOME=/opt/data
 
 exec "$S6_SUID" hermes "$REAL" "$@"
