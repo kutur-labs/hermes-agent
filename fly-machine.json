@@ -7,6 +7,9 @@
       "secrets": [
         {
           "env_var": "TS_AUTHKEY"
+        },
+        {
+          "env_var": "GITHUB_TOKEN"
         }
       ]
     }
