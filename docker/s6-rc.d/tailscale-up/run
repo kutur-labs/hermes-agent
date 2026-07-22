@@ -32,3 +32,5 @@ if [ "$backend_state" != "Running" ]; then
 else
     tailscale --socket="$socket" set --ssh=true
 fi
+
+exec sleep infinity

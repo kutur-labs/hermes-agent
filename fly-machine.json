@@ -3,7 +3,7 @@
     {
       "name": "marcel",
       "image": "debian:13.4",
-      "cmd": ["gateway", "run"]
+      "cmd": ["sleep", "infinity"]
     }
   ]
 }
