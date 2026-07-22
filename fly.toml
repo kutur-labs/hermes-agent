@@ -1,4 +1,4 @@
-app = "marcel"
+app = "kutur-labs-marcel"
 primary_region = "waw"
 kill_signal = "SIGTERM"
 kill_timeout = "30s"

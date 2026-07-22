@@ -29,7 +29,7 @@ exit
 Then restart the Machine so the gateway reloads its configuration:
 
 ```sh
-fly machine restart --app marcel
+fly machine restart --app kutur-labs-marcel
 ```
 
 Model-provider and messaging-platform credentials are Hermes configuration;
